@@ -169,16 +169,27 @@ def parse_earned_points(message: str) -> int:
 
 
 def validate_cookie(cookie: str) -> Tuple[bool, str]:
-    """验证 Cookie 是否包含必要字段（按 ; 拆分 key 精确校验，避免子串误判）"""
+    """验证 Cookie 是否包含成对的会话字段（前缀无关，兼容 koa:/gld: 等）。"""
     if not cookie or not cookie.strip():
         return False, "Cookie 为空"
     cookie = cookie.strip()
+    if cookie.lower().startswith("cookie:"):
+        cookie = cookie[7:].strip()
+    if (cookie.startswith('"') and cookie.endswith('"')) or (cookie.startswith("'") and cookie.endswith("'")):
+        cookie = cookie[1:-1].strip()
     keys = {part.split("=", 1)[0].strip() for part in cookie.split(";") if part.strip()}
-    if "koa:sess" not in keys:
-        return False, "Cookie 缺少必要字段: koa:sess"
-    if "koa:sess.sig" not in keys:
-        return False, "Cookie 缺少必要字段: koa:sess.sig"
-    return True, ""
+    prefixes = set()
+    for key in keys:
+        if key.endswith(":sess"):
+            prefixes.add(key[:-5])  # strip ':sess'
+        elif key.endswith(":sess.sig"):
+            prefixes.add(key[:-9])  # strip ':sess.sig'
+    for prefix in sorted(prefixes):
+        sess_key = f"{prefix}:sess"
+        sig_key = f"{prefix}:sess.sig"
+        if sess_key in keys and sig_key in keys:
+            return True, ""
+    return False, "Cookie 缺少成对的会话字段（需要 xxx:sess 与 xxx:sess.sig，如 gld:sess）"
 
 
 def is_retryable(exc: Exception) -> bool:
